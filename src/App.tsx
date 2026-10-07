@@ -17,22 +17,17 @@ export default function App() {
   const [view, setView] = useState<View>("leaderboard");
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [compareIds, setCompareIds] = useState<string[]>([]);
+  // On Vercel the API routes are always available — no warmup polling needed.
+  // We do a single health check; if it fails after a short grace period we show an error.
   const [backendReady, setBackendReady] = useState(false);
   const [backendError, setBackendError] = useState(false);
 
-  // Poll for backend readiness
   useEffect(() => {
-    let tries = 0;
-    function scheduleNext() {
-      if (tries < 20) setTimeout(doCheck, 800);
-      else setBackendError(true);
-    }
-    function doCheck() {
-      fetch("/api/health")
-        .then((r) => { if (r.ok) setBackendReady(true); else { tries++; scheduleNext(); } })
-        .catch(() => { tries++; scheduleNext(); });
-    }
-    doCheck();
+    const timeout = setTimeout(() => setBackendError(true), 12000);
+    fetch("/api/health")
+      .then((r) => { if (r.ok) { clearTimeout(timeout); setBackendReady(true); } })
+      .catch(() => { /* timeout will handle it */ });
+    return () => clearTimeout(timeout);
   }, []);
 
   // Fetch leaderboard
@@ -50,11 +45,13 @@ export default function App() {
   const {
     data: rating,
     isLoading: loadingRating,
-  } = useQuery<RatingResult>({
+    error: ratingError,
+  } = useQuery<RatingResult, Error>({
     queryKey: ["rating", selectedId],
     queryFn: () => fetchRating(selectedId!),
     enabled: backendReady && selectedId !== null,
     staleTime: 30 * 60 * 1000,
+    retry: 1,
   });
 
   // Fetch compare ratings
@@ -198,11 +195,27 @@ export default function App() {
             {/* Rating view */}
             {view === "rating" && (
               <motion.div key="rating" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-                <RatingPage
-                  rating={rating!}
-                  onBack={() => { setView("leaderboard"); setSelectedId(null); }}
-                  loading={loadingRating || !rating}
-                />
+                {ratingError && !loadingRating ? (
+                  <div className="space-y-4">
+                    <button
+                      onClick={() => { setView("leaderboard"); setSelectedId(null); }}
+                      className="flex items-center gap-2 text-sm text-[var(--subtle)] hover:text-[var(--muted)] transition-colors"
+                    >
+                      ← All protocols
+                    </button>
+                    <div className="rounded-xl border border-[var(--danger)]/30 bg-[var(--danger)]/[0.06] p-6 text-center space-y-2">
+                      <AlertTriangle size={20} className="text-[var(--danger)] mx-auto" />
+                      <p className="text-[var(--ink-2)] font-medium">Protocol not found</p>
+                      <p className="text-sm text-[var(--muted)]">{ratingError.message}</p>
+                    </div>
+                  </div>
+                ) : (
+                  <RatingPage
+                    rating={rating!}
+                    onBack={() => { setView("leaderboard"); setSelectedId(null); }}
+                    loading={loadingRating || !rating}
+                  />
+                )}
               </motion.div>
             )}
 

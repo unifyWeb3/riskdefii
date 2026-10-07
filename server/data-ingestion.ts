@@ -185,6 +185,67 @@ export async function fetchCGCoin(coinId: string): Promise<CGCoin | null> {
   return coin;
 }
 
+// ---- Build ProtocolRawData from DefiLlama alone (no curated data, low confidence) ----
+export async function buildRawDataFromDL(dlEntry: DLProtocol): Promise<ProtocolRawData> {
+  const [dlHacks, dlYields] = await Promise.all([fetchDLHacks(), fetchDLYields()]);
+
+  const nameLower = dlEntry.name.toLowerCase();
+  const exploitHistory: ExploitRecord[] = dlHacks
+    .filter((h) => h.name.toLowerCase().includes(nameLower) || nameLower.includes(h.name.toLowerCase().split(" ")[0]))
+    .map((h) => ({ date: h.date, lossUSD: h.funds_lost, type: h.technique ?? "unknown", resolved: true, source: "defillama/hacks" }));
+
+  const ageMonths = dlEntry.listedAt
+    ? (Date.now() - dlEntry.listedAt * 1000) / (1000 * 60 * 60 * 24 * 30)
+    : 12;
+
+  const protocolPools = dlYields.filter((p) => p.project === dlEntry.slug);
+  const topPool = protocolPools.sort((a, b) => (b.apy ?? 0) - (a.apy ?? 0))[0];
+
+  const tvl = dlEntry.tvl ?? 0;
+  const tvl30dChange = dlEntry.change_1m ?? null;
+  const tvl7dChange = dlEntry.change_7d ?? null;
+
+  return {
+    protocolId: dlEntry.slug,
+    protocolName: dlEntry.name,
+    // All governance/audit data unknown — marked low confidence
+    audits: dp([], "unknown", "low"),
+    // Fields typed as DataPoint<number> / DataPoint<boolean> cannot be null —
+    // use conservative defaults and mark source as "unknown" with low confidence.
+    bugBountyUSD: dp(0, "unknown — assumed 0 (conservative)", "low"),
+    exploitHistory: dp(exploitHistory, "defillama/hacks", exploitHistory.length > 0 ? "medium" : "low"),
+    codeMaturityMonths: dp(ageMonths, dlEntry.listedAt ? "defillama/protocols:listedAt" : "estimate", dlEntry.listedAt ? "medium" : "low"),
+    contractsVerified: dp(false, "unknown — assumed false (conservative)", "low"),
+    tvlUSD: dp(tvl || 0, "defillama/protocols", tvl > 0 ? "high" : "low"),
+    tvl30dChange: dp(tvl30dChange ?? 0, "defillama/protocols:change_1m", tvl30dChange !== null ? "high" : "low"),
+    tvl7dChange: dp(tvl7dChange ?? 0, "defillama/protocols:change_7d", tvl7dChange !== null ? "high" : "low"),
+    slippage10k: dp(null, "unknown", "low"),
+    slippage100k: dp(null, "unknown", "low"),
+    top10HolderPct: dp(null, "unknown", "low"),
+    insiderTeamPct: dp(null, "unknown", "low"),
+    hasPublicVestingSchedule: dp(null, "unknown", "low"),
+    nearUnlockRiskFlag: dp(null, "unknown", "low"),
+    hasMultisig: dp(null, "unknown", "low"),
+    timelockDays: dp(0, "unknown — assumed 0 (conservative)", "low"),
+    adminCanDrainWithoutTimelock: dp(false, "unknown — assumed false", "low"),
+    adminCanMintUnrestricted: dp(false, "unknown — assumed false", "low"),
+    isUpgradeable: dp(true, "unknown — assumed upgradeable (conservative)", "low"),
+    isDecentralized: dp(null, "unknown", "low"),
+    ageMonths: dp(ageMonths, dlEntry.listedAt ? "defillama/protocols" : "estimate", dlEntry.listedAt ? "medium" : "low"),
+    pastIncidentCount: dp(exploitHistory.length, "defillama/hacks", "medium"),
+    incidentResponseScore: dp(null, "unknown", "low"),
+    apyTotal: topPool ? dp(topPool.apy ?? null, "defillama/yields", "high") : dp(null, "defillama/yields", "low"),
+    apyBase: topPool ? dp(topPool.apyBase ?? null, "defillama/yields", "high") : dp(null, "defillama/yields", "low"),
+    apyReward: topPool ? dp(topPool.apyReward ?? null, "defillama/yields", "high") : dp(null, "defillama/yields", "low"),
+    rewardTokenIsNative: dp(null, "unknown", "low"),
+    usesExternalOracle: dp(false, "unknown — assumed false", "low"),
+    oracleProvider: dp(null, "unknown", "low"),
+    usesBridge: dp(false, "unknown — assumed false", "low"),
+    bridgeProvider: dp(null, "unknown", "low"),
+    dependsOnExternalProtocols: dp([], "unknown", "low"),
+  };
+}
+
 // ---- Build ProtocolRawData from curated + live data ----
 export async function buildRawData(curated: CuratedProtocol): Promise<ProtocolRawData> {
   // Fetch live data in parallel

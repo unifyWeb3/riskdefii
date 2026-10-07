@@ -6,7 +6,7 @@ async function get<T>(path: string): Promise<T> {
   const res = await fetch(path);
   if (!res.ok) {
     const body = await res.json().catch(() => ({})) as { error?: string };
-    throw new Error(body.error ?? `HTTP ${res.status}`);
+    throw new Error(body.error ?? `HTTP ${res.status}: request failed`);
   }
   return res.json() as Promise<T>;
 }
