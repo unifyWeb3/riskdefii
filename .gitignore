@@ -1,0 +1,35 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+build/
+
+# Foundry / contracts
+contracts/out/
+contracts/cache/
+contracts/broadcast/
+
+# Environment — NEVER commit secrets
+.env
+.env.*
+!.env.example
+
+# Circle credentials
+.circle/
+
+# Logs
+*.log
+/tmp/
+
+# Editor
+.DS_Store
+.vscode/
+.idea/
+
+# Bun
+.bun/
+
+# Traces / console (runtime files, not source)
+traces.jsonl
+console.jsonl
